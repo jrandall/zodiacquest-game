@@ -17,6 +17,8 @@ GEMS = ["GEM",
         "JASPER", "ONYX",
         "JADE"]
 
+GO_CMD="G"
+QUIT_CMD="Q"
 
 class Inventory: 
     def __init__(self, people=[], wands=[], papers=[], runes=[], other_things=[], strings=[]):
@@ -356,14 +358,22 @@ class You(Person):
             print("ERROR: you cannot get to %s from here" % (portal_name))
             return False
 
+    @property
+    def commands(self):
+        cmds = []
+        # get valid go commands (accessible and affordable portals)
+        for portal in self.region.portals:
+            cmds.append("%s%s" % (GO_CMD, portal.destination(self.region).short_name))
+        return cmds
+
     def command(self, cmd):
-        if cmd.startswith("g"):
+        if cmd.startswith(GO_CMD):
             # GO (transit portal)
             dest = cmd[1:].upper()
             if not self.transit(dest):
                 print("ERROR: could not transit to %s" % (dest))
                 return False
-        elif cmd.startswith("q"):
+        elif cmd.startswith(QUIT_CMD):
             self.quit = True
             print("\n".join(self._command_history))
         else:
@@ -382,10 +392,11 @@ def main():
     # enter the world
     you = You(world.regions["A"], coins=15)
 
-    # describe the world as you see it
+    # describe the world as you see it and accept commands from stdin
     while not you.quit:
         print(you.description)
-        you.command(input("%s> " % you.step))
+        print("Commands: %s" % you.commands)
+        you.command(input("%s> " % you.step).upper())
 
 if __name__ == "__main__":
     main()
