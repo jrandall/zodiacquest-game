@@ -24,9 +24,14 @@ TAKE_CMD="T "
 QUIT_CMD="Q"
 
 class Thing:
-    def __init__(self, names=[], strings=[]):
+    def __init__(self, names=[], strings=[], moveable=True):
         self._names = list(names)
         self._strings = list(strings)
+        self._moveable = moveable
+
+    @property
+    def moveable(self):
+        return self._moveable
 
     @property
     def names(self):
@@ -72,22 +77,25 @@ class Inventory:
         return self._names_to_things[name]
     
     def remove(self, thing):
-        for name in thing.names:
-            if name in self._names_to_things:
-                self._names_to_things[name] = [t for t in self._names_to_things[name] if t != thing]
-            else:
-                raise Exception("ERROR: expected name %s in names_to_things")
-        for string in thing.strings:
-            if string in self._strings_to_things:
-                self._strings_to_things[string] = [s for s in self._strings_to_things[string] if s != thing]
-            else:
-                raise Exception("ERROR: expected string %s in strings_to_things")
-        try:
-            self._things.remove(thing)
-            return thing
-        except Exception as e:
-            raise Exception("ERROR: could not remove thing %s from inventory" % thing)
-        
+        if thing.moveable:
+            for name in thing.names:
+                if name in self._names_to_things:
+                    self._names_to_things[name] = [t for t in self._names_to_things[name] if t != thing]
+                else:
+                    raise Exception("ERROR: expected name %s in names_to_things")
+            for string in thing.strings:
+                if string in self._strings_to_things:
+                    self._strings_to_things[string] = [s for s in self._strings_to_things[string] if s != thing]
+                else:
+                    raise Exception("ERROR: expected string %s in strings_to_things")
+            try:
+                self._things.remove(thing)
+                return thing
+            except Exception as e:
+                raise Exception("ERROR: could not remove thing %s from inventory" % thing)
+        else:
+            print("Sorry, %s is not moveable" % (thing))
+            return False
 
     def __str__(self):
         return str(self._things)
@@ -243,24 +251,14 @@ class RegionPortals(Mapping):
         return "Portals from %s: %s" % (self._from_region, [str(portal) for portal in self._portals])
 
 class Person(Thing):
-    def __init__(self, name, region, coins=0, **kwargs):
-        super().__init__(names=[name])
-        self._inventory = Inventory(**kwargs)
-        self.region = region
-        self.coins = coins
-        self.foo = list()
+    def __init__(self, names, moveable=False, **kwargs):
+        super().__init__(names=names)
+        self._moveable = moveable
+#        self.magic = Magic(**kwargs)
 
     @property
     def id(self):
         return self._names[0]
-
-    @property
-    def inventory(self):
-        return self._inventory
-
-    @property
-    def have_gem_p(self):
-        return self.inventory.have_gem_p or self.region.inventory.have_gem_p
 
     def __str__(self):
         return str(self.id)
@@ -291,9 +289,7 @@ class World:
         # Page 1 regions
         self.regions.add_region(Region(self, "YE OLD HOME TOWN", "A"))
         self.regions.add_region(Region(self, "TRANSITION MEADOW", "B"))
-        c = Region(self, "OPEN ZONE", "C")
-        c.inventory.add(Person("PHRONTIERSMAN", c))
-        self.regions.add_region(c)
+        self.regions.add_region(Region(self, "OPEN ZONE", "C"))
         self.regions.add_region(Region(self, "TRANSITION GLEN", "D"))
         self.regions.add_region(Region(self, "GARDENS OF IVES", "E"))
         self.regions.add_region(Region(self, "MOUNTAIN HEIGHTS", "F"))
@@ -368,6 +364,10 @@ class World:
         self.portals.add_portal(Portal(self.regions["GLADE OF SUNNINESS"], self.regions["WILDERNESS EVENT PAVILION"], 3))
         self.portals.add_portal(Portal(self.regions["WILDERNESS EVENT PAVILION"], self.regions["SOUTHINGTON EAST"], 2))
 
+    def _construct_things(self):
+        r = self.regions["OPEN ZONE"]
+        r.inventory.add(Person(["PHRONTIERSMAN", "FIGURE"]))
+
     def __init__(self, valid_things_dict="9C.txt"):
         self._valid_things = dict()
         with open(valid_things_dict, 'r') as f:
@@ -376,6 +376,7 @@ class World:
                 self._valid_things[thing_string] = True
         self._construct_regions()
         self._construct_portals()
+        self._construct_things()
 
     def valid_thing_p(self, string):
         """ is the string a valid thing? """
@@ -393,15 +394,28 @@ class World:
             len(self.valid_things)
             )
 
-class You(Person):
-    def __init__(self, region, **kwargs):
-        super().__init__("You", region, **kwargs)
-        self.quit = False
+class You:
+    def __init__(self, region, coins=0, **kwargs):
+        self.region = region
+        self.coins = coins
+        self._inventory = Inventory(**kwargs)
         self._command_history = []
+        self.quit = False
+
+    def __str__(self):
+        return "You"
+        
+    @property
+    def inventory(self):
+        return self._inventory
 
     @property
     def step(self):
         return len(self._command_history)
+
+    @property
+    def have_gem_p(self):
+        return self.inventory.have_gem_p or self.region.inventory.have_gem_p
 
     @property
     def description(self):
@@ -443,15 +457,27 @@ class You(Person):
         things = self.region.inventory.get(id)
         if len(things) > 1:
             print("ERROR: attempted to take more than one thing: %s" % id)
+            return False
+        elif len(things) < 1:
+            print("ERROR: no thing to take: %s" % id)
+            return False
         else:
-            self.inventory.add(self.region.inventory.remove(things[0]))
+            thing = self.region.inventory.remove(things[0])
+            if thing:
+                self.inventory.add(thing)
+        return thing
 
     def leave(self, id):
         things = self.inventory.get(id)
         if len(things) > 1:
             print("ERROR: attempted to leave more than one thing: %s" % id)
+            return False
+        elif len(things) < 1:
+            print("ERROR: no thing to leave: %s" % id)
+            return False
         else:
             self.region.inventory.add(self.inventory.remove(things[0]))
+        return things[0]
 
     @property
     def commands(self):
@@ -462,9 +488,10 @@ class You(Person):
         # valid drop commands (all things in my inventory)
         for thing in self.inventory.things:
             cmds.append("%s%s" % (LEAVE_CMD, thing.id))
-        # valid take commands (all things in region inventory)
+        # valid take commands (all things in region inventory that are moveable)
         for thing in self.region.inventory.things:
-            cmds.append("%s%s" % (TAKE_CMD, thing.id))
+            if thing.moveable:
+                cmds.append("%s%s" % (TAKE_CMD, thing.id))
         return cmds
 
     def command(self, cmd):
