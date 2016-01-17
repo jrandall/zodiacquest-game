@@ -17,44 +17,106 @@ GEMS = ["GEM",
         "JASPER", "ONYX",
         "JADE"]
 
+# Command prefixes
 GO_CMD="G"
+LEAVE_CMD="L "
+TAKE_CMD="T "
 QUIT_CMD="Q"
 
-class Inventory: 
-    def __init__(self, people=[], wands=[], papers=[], runes=[], other_things=[], strings=[]):
-        self.people = people
-        self.wands = wands
-        self.papers = papers
-        self.runes = runes
-        self.other_things = other_things
-        self.strings = strings
-        self._thing_lookup = dict()
-        for thing in self.things:
-            self._thing_lookup[thing] = 1
+class Thing:
+    def __init__(self, names):
+        self._names = names
+
+    @property
+    def names(self):
+        return self._names
+
+class Wand(Thing):
+    def __init__(self, names, magic):
+        super().__init__(names)
+        self._magic = magic
+
+class Paper(Thing):
+    def __init__(self, names, sheets=1, color="", runes="", strings=""):
+        super().__init__(names)
+        self._sheets = sheets
+        self._color = color
+        self._runes = runes
+        self._strings = strings
+
+class Inventory:
+    def __init__(self):
+        self._things = []
+        self._names_to_things = dict()
+        self._strings_to_things = dict()
+
+    def add_thing(self, thing):
+        self._things.append(thing)
+        for name in thing.names:
+            if name in self._names_to_things:
+                self._names_to_things[name].append(thing)
+            else:
+                self._names_to_things[name] = [thing]
+        for name in thing.strings:
+            if name in self._strings_to_things:
+                self._strings_to_things[name].append(thing)
+            else:
+                self._strings_to_things[name] = [thing]
+    
+    def remove_thing(self, thing):
+        for name in thing.names:
+            if name in self._names_to_things:
+                print("DEBUG: B have %s things in names_to_things[%s]" % (len(self._names_to_things[name]), name))
+                self._names_to_things[name] = [t for t in self._names_to_things[name] if t != thing]
+                print("DEBUG: A have %s things in names_to_things[%s]" % (len(self._names_to_things[name]), name))
+            else:
+                raise Exception("ERROR: expected name %s in names_to_things")
+        for string in thing.strings:
+            if string in self._strings_to_things:
+                print("DEBUG: B have %s things in strings_to_things[%s]" % (len(self._strings_to_things[string]), string))
+                self._strings_to_things[string] = [s for s in self._strings_to_things[string] if s != thing]
+                print("DEBUG: A have %s things in strings_to_things[%s]" % (len(self._strings_to_things[string]), string))
+            else:
+                raise Exception("ERROR: expected string %s in strings_to_things")
+        self._things.remove(thing)
+        
+
+    def __str__(self):
+        return str(self._things)
 
     @property
     def things(self):
-        return list(chain(self.people, 
-                          self.wands, 
-                          self.papers, 
-                          self.runes, 
-                          self.other_things))
+        return self._things
+
+    @property
+    def thing_names(self):
+        return list(chain([thing.names for thing in self._things]))
+    
+    @property
+    def string_names(self):
+        return list(chain([thing.strings for thing in self._things]))
+
+    @property
+    def all_names(self):
+        return list(chain(self.thing_names, self.string_names))
 
     @property
     def empty_p(self):
-        return len(self.things) + len(self.strings) == 0
+        return (len(self.all_names) == 0)
 
     @property
     def have_gem_p(self):
+        all_names = self.all_names
         for gem in GEMS:
-            if gem in self.things:
+            if gem in all_names:
                 return True
         return False
 
     @property
     def have_zodiac_p(self):
+        all_names = self.all_names
         for zodiac in ZODIACS:
-            if zodiac in self.things:
+            if zodiac in all_names:
                 return True
         return False
 
@@ -65,30 +127,32 @@ class Inventory:
         if self.empty_p:
             return "no things or strings"
         else:
-            return "[%s]" % (", ".join(list(chain(
-                            [str(thing) for thing in self.things],
-                            ["'%s'" % string for string in self.strings],
-                            ))))
+            return "\n".join([str(thing) for thing in self.things])
 
 
 class Region:
-    def __init__(self, world, name, short_name, monument=None, **kwargs):
+    def __init__(self, world, name, id, monument=None, **kwargs):
         self._world = world
-        self.name = name
-        self.short_name = short_name
+        self._name = name
+        self.id = id
         self.portals = RegionPortals(self)
         self.monument = monument
         self.inventory = Inventory(**kwargs)
+        self.people = People()
 
     def add_portal(self, portal):
         self.portals.add_portal(portal, portal.destination(self))
 
     @property
-    def names(self):
-        return [self.name, self.short_name]
+    def name(self):
+        return self._name
+
+    @property
+    def name_and_id(self):
+        return [self.name, self.id]
 
     def __str__(self):
-        return "%s (%s)" % (self.name, self.short_name)
+        return "%s (%s)" % (self.name, self.id)
 
 class Portal:
     def __init__(self, region_a, region_b, cost):
@@ -113,9 +177,9 @@ class Portal:
         return self.listed_cost
 
     def destination(self, region):
-        if region.name == self._region_a.name:
+        if region.id == self._region_a.id:
             return self._region_b
-        elif region.name == self._region_b.name:
+        elif region.id == self._region_b.id:
             return self._region_a
         else:
             print("ERROR: Portal destination requested for region %s not connected to portal: %s" % (region, self))
@@ -156,7 +220,7 @@ class RegionPortals(Mapping):
 
     def add_portal(self, portal, destination_region):
         self._portals.append(portal)
-        for region_name in destination_region.names:
+        for region_name in destination_region.name_and_id:
             self._destination_region_lookup[region_name] = portal
 
     def __getitem__(self, key):
@@ -172,19 +236,40 @@ class RegionPortals(Mapping):
     def __str__(self):
         return "Portals from %s: %s" % (self._from_region, [str(portal) for portal in self._portals])
 
-class Person:
-    def __init__(self, name, region, coins=0, **kwargs):
-        self.name = name
+class Person(Thing):
+    def __init__(self, names, region, coins=0, **kwargs):
+        super().__init__(names)
+        self._inventory = Inventory(**kwargs)
         self.region = region
-        self.inventory = Inventory(**kwargs)
         self.coins = coins
+
+    @property
+    def inventory(self):
+        return self._inventory
 
     @property
     def have_gem_p(self):
         return self.inventory.have_gem_p or self.region.inventory.have_gem_p
 
     def __str__(self):
-        return self.name
+        return self.names
+
+class People(Mapping):
+    def __init__(self):
+        self._people = dict()
+        
+    def add_person(self, person):
+        self._people[person.names] = person
+
+    def __getitem__(self, id):
+        return self._people[id]
+
+    def __iter__(self):
+        for id in self._people:
+            yield self._people[id]
+
+    def __len__(self):
+        return len(self._people)
 
 class Regions(Mapping):
     def __init__(self):
@@ -194,7 +279,7 @@ class Regions(Mapping):
     def add_region(self, region):
         self._regions.append(region)
         self._region_lookup[region.name] = region
-        self._region_lookup[region.short_name] = region
+        self._region_lookup[region.id] = region
 
     def __getitem__(self, key):
         return self._region_lookup[key]
@@ -212,7 +297,9 @@ class World:
         # Page 1 regions
         self.regions.add_region(Region(self, "YE OLD HOME TOWN", "A"))
         self.regions.add_region(Region(self, "TRANSITION MEADOW", "B"))
-        self.regions.add_region(Region(self, "OPEN ZONE", "C"))
+        c = Region(self, "OPEN ZONE", "C")
+        c.people.add_person(Person("PHRONTIERSMAN", c))
+        self.regions.add_region(c)
         self.regions.add_region(Region(self, "TRANSITION GLEN", "D"))
         self.regions.add_region(Region(self, "GARDENS OF IVES", "E"))
         self.regions.add_region(Region(self, "MOUNTAIN HEIGHTS", "F"))
@@ -314,28 +401,33 @@ class World:
 
 class You(Person):
     def __init__(self, region, **kwargs):
-        super(You, self).__init__("You", region, **kwargs)
+        super().__init__("You", region, **kwargs)
         self.quit = False
         self._command_history = []
+        self._companions = People()
 
     @property
     def step(self):
         return len(self._command_history)
 
     @property
+    def companions(self):
+        return self._companions
+
+    @property
     def description(self):
         descriptions = ["%s" % (str(self))]
         if self.coins > 0:
-            descriptions.append("with %s coins" % (self.coins))
+            descriptions.append(", with %s coins" % (self.coins))
         else:
-            descriptions.append("devoid of coins!")
-        descriptions.append("at %s" % (self.region))
+            descriptions.append(", devoid of coins!")
+        descriptions.append(" at %s" % (self.region))
         if not self.inventory.empty_p:
-            descriptions.append("carrying %s" % (str(self.inventory)))
+            descriptions.append("\nCarrying:%s" % (str(self.inventory)))
         if self.region.monument:
-            descriptions.append("here you see a monument to %s" % (str(self.region.monument)))
+            descriptions.append("\nHere you see a monument to %s" % (str(self.region.monument)))
         if not self.region.inventory.empty_p:
-            descriptions.append("and some things: %s" % (str(self.region.inventory)))
+            descriptions.append("\nAnd some things:%s" % (str(self.region.inventory)))
         # describe portals and their current cost
         portal_descriptions = []
         for portal in self.region.portals:
@@ -348,30 +440,57 @@ class You(Person):
             else:
                 portal_description += " at a cost of %s" % (portal_cost)
             portal_descriptions.append(portal_description)
-        descriptions.append("with portals to:\n%s" % ("\n".join(portal_descriptions)))
-        return "; ".join(descriptions)
+        descriptions.append(" with portals to:\n%s" % ("\n".join(portal_descriptions)))
+        return "".join(descriptions)
 
-    def transit(self, portal_name):
-        if portal_name in self.region.portals:
-            return self.region.portals[portal_name].transit(self)
+    def go(self, portal_id):
+        if portal_id in self.region.portals:
+            return self.region.portals[portal_id].transit(self)
         else:
-            print("ERROR: you cannot get to %s from here" % (portal_name))
+            print("ERROR: you cannot get to %s from here" % (portal_id))
             return False
+
+    def take(self, id):
+        print("TODO: take %s" % id )
+
+    def leave(self, id):
+        print("TODO: leave %s" % id)
 
     @property
     def commands(self):
         cmds = []
-        # get valid go commands (accessible and affordable portals)
+        # valid go commands (accessible and affordable portals)
         for portal in self.region.portals:
-            cmds.append("%s%s" % (GO_CMD, portal.destination(self.region).short_name))
+            cmds.append("%s%s" % (GO_CMD, portal.destination(self.region).id))
+        # valid drop commands (all things in inventory and all companions)
+        for thing in self.inventory.things:
+            cmds.append("%s%s" % (LEAVE_CMD, thing.id))
+        for person in self.companions:
+            cmds.append("%s%s" % (LEAVE_CMD, person.id))
+        # valid take commands (all things and people in region)
+        for thing in self.region.inventory.things:
+            cmds.append("%s%s" % (TAKE_CMD, thing.id))
+        for person in self.region.people:
+            cmds.append("%s%s" % (TAKE_CMD, person.id))
+        
         return cmds
 
     def command(self, cmd):
         if cmd.startswith(GO_CMD):
             # GO (transit portal)
-            dest = cmd[1:].upper()
-            if not self.transit(dest):
-                print("ERROR: could not transit to %s" % (dest))
+            dest = cmd[len(GO_CMD):].upper()
+            if not self.go(dest):
+                print("ERROR: could not go to %s" % (dest))
+                return False
+        elif cmd.startswith(TAKE_CMD):
+            name = cmd[len(TAKE_CMD):].upper()
+            if not self.take(name):
+                print("ERROR: could not take %s" % (name))
+                return False
+        elif cmd.startswith(LEAVE_CMD):
+            name = cmd[len(LEAVE_CMD):].upper()
+            if not self.leave(name):
+                print("ERROR: could not leave %s" % (name))
                 return False
         elif cmd.startswith(QUIT_CMD):
             self.quit = True
