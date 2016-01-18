@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-from itertools import chain
 from collections.abc import Mapping
+from itertools import chain
 
 ZODIACS = ["ARIES", "TAURUS", "GEMINI", 
           "CANCER", "LEO", "VIRGO", 
@@ -74,7 +74,10 @@ class Inventory:
                 self._strings_to_things[name] = [thing]
 
     def get(self, name):
-        return self._names_to_things[name]
+        if name in self._names_to_things:
+            return self._names_to_things[name]
+        else:
+            return None
     
     def remove(self, thing):
         if thing.moveable:
@@ -97,24 +100,21 @@ class Inventory:
             print("Sorry, %s is not moveable" % (thing))
             return False
 
-    def __str__(self):
-        return str(self._things)
-
     @property
     def things(self):
         return self._things
 
     @property
     def thing_names(self):
-        return list(chain([thing.names for thing in self._things]))
+        return list(chain.from_iterable([thing.names for thing in self._things]))
     
     @property
     def string_names(self):
-        return list(chain([thing.strings for thing in self._things]))
+        return list(chain.from_iterable([thing.strings for thing in self._things]))
 
     @property
     def all_names(self):
-        return list(chain(self.thing_names, self.string_names))
+        return list(chain.from_iterable([self.thing_names, self.string_names]))
 
     @property
     def empty_p(self):
@@ -143,7 +143,7 @@ class Inventory:
         if self.empty_p:
             return "no things or strings"
         else:
-            return "\n".join([str(thing) for thing in self.things])
+            return "\n".join(self.all_names)
 
 class Region:
     def __init__(self, world, name, id, monument=None, **kwargs):
@@ -364,9 +364,22 @@ class World:
         self.portals.add_portal(Portal(self.regions["GLADE OF SUNNINESS"], self.regions["WILDERNESS EVENT PAVILION"], 3))
         self.portals.add_portal(Portal(self.regions["WILDERNESS EVENT PAVILION"], self.regions["SOUTHINGTON EAST"], 2))
 
+    def phrontiersman_magic(you, from_thing_name, to_thing_name):
+        # I use Magic to phonetically change whatever you’d like into
+        # a Thing by adding or changing a single sound at the
+        # front. For example, I can transform an OCEAN into a POTION
+        # or a BOSS into a SAUCE. (I never just add or change a single
+        # letter while leaving the rest of the letters intact – that
+        # would be a bit boring.)
+        if you.region.inventory.get(from_thing_name):
+            print("TODO: implement")
+#            if from_thing_name == "ANSWER" and to_thing_name == "CANCER":
+#                
+                
+
     def _construct_things(self):
         r = self.regions["OPEN ZONE"]
-        r.inventory.add(Person(["PHRONTIERSMAN", "FIGURE"]))
+        r.inventory.add(Person(["PHRONTIERSMAN", "FIGURE"], magic=World.phrontiersman_magic))
 
     def __init__(self, valid_things_dict="9C.txt"):
         self._valid_things = dict()
